@@ -124,19 +124,64 @@ class Player:
     def show_hand(self):
         return ', '.join(str(card) for card in self.hand)
 
+class AIPlayer(Player):
+    def __init__(self, name, deck):
+        super().__init__(name, deck)
+
+    def evaluate_game_state(self):
+        my_caravan_values = [sum(card.value for card in caravan if not card.special) for caravan in self.caravans]
+        opponent_caravan_values = [sum(card.value for card in caravan if not card.special) for caravan in self.game.players[1 - self.game.current_player].caravans]
+
+        # Additional assessments could include:
+        # - Which caravans are closest to winning.
+        # - The potential impact of special cards.
+        # - The suit and value distribution in hand.
+
+        return {
+            "my_caravans": my_caravan_values, 
+            "opponent_caravans": opponent_caravan_values,
+            # Include other assessments here
+        }
+
+
+    def choose_card_to_play(self):
+        game_state = self.evaluate_game_state()
+
+        # Implement a basic strategy:
+        # - Prioritize playing on caravans that are closest to the winning range.
+        # - Use special cards to disrupt the opponent's progress or boost own caravans.
+        # - This is a placeholder for more advanced logic.
+
+        card_index = random.choice(range(len(self.hand)))
+        caravan_index = random.choice(range(3))
+        play_on_opponent = random.choice([True, False])
+        
+        # Replace the above logic with more advanced decision-making.
+        
+        return card_index, caravan_index, play_on_opponent
+
+    def play_turn(self):
+        card_index, caravan_index, play_on_opponent = self.choose_card_to_play()
+        opponent = None if not play_on_opponent else self.game.players[1 - self.game.current_player]
+        self.play_card(card_index, caravan_index, opponent)
+
+        
+
+
 
 class Game:
-    def __init__(self):
-        # Ensure standard deck creation is used if custom deck is not provided
-        deck1 = Deck() 
-        deck2 = Deck()  
+    def __init__(self, ai_opponent=False):
+        deck1 = Deck(custom_cards=[Card(value, suit) for value in range(1, 14) for suit in ["Hearts", "Diamonds", "Clubs", "Spades"]] * 3)
+        deck2 = Deck(custom_cards=[Card(value, suit) for value in range(1, 14) for suit in ["Hearts", "Diamonds", "Clubs", "Spades"]] * 3)
 
         self.players = [Player("Player 1", deck1), Player("Player 2", deck2)]
         self.current_player = 0
 
-        # Debug: Print deck composition
-        self.players[0].deck.print_deck()
+        if ai_opponent:
+            self.players[1] = AIPlayer("AI Opponent", deck2)
+            self.players[1].game = self  # Provide the AI access to the game object
 
+        self.start()
 
     def start(self):
         for player in self.players:
@@ -145,34 +190,55 @@ class Game:
     def switch_player(self):
         self.current_player = 1 - self.current_player
 
+    def display_caravans(self, player, player_number):
+        print(f"\n{player.name}'s Caravans:")
+        for i, caravan in enumerate(player.caravans):
+            caravan_value = sum(card.value for card in caravan if not card.special)
+            direction = player.directions[i]
+            print(f"  Caravan {player_number}-{i+1}: Value = {caravan_value}, Direction = {direction if direction else 'Not set'}")
+
     def current_player_turn(self):
         player = self.players[self.current_player]
         opponent = self.players[1 - self.current_player]
 
         player.refill_hand()
-        print(f"\n{player.name}'s turn. Hand: {player.show_hand()}")
 
-        for i, caravan in enumerate(player.caravans):
-            caravan_value = sum(card.value for card in caravan if not card.special)
-            direction = player.directions[i]
-            print(f"Caravan {i+1}: Value = {caravan_value}, Direction = {direction if direction else 'Not set'}")
+        # Display the player's hand (for human players)
+        if not isinstance(player, AIPlayer):
+            print(f"\n{player.name}'s turn. Hand: {player.show_hand()}")
 
-        try:
-            card_index = int(input("Choose a card to play (index): "))
-            caravan_index = int(input("Choose a caravan to place the card (0-2): "))
-            play_on_opponent = input("Play on opponent's caravan? (yes/no): ").lower() == 'yes'
+        # Display all caravans
+        self.display_caravans(player, 1)
+        self.display_caravans(opponent, 2)
 
-            target_player = opponent if play_on_opponent else player
+        if isinstance(player, AIPlayer):
+            print("\nAI Opponent's turn.")
+            successful_move = player.play_turn()
+        else:
+            try:
+                card_index = int(input("Choose a card to play (index): "))
+                caravan_index = int(input("Choose a caravan to place the card (1-3): "))
+                play_on_opponent = input("Play on opponent's caravan? (yes/no): ").lower() == 'yes'
 
-            if player.play_card(card_index, caravan_index, target_player):
-                print(f"Played {target_player.caravans[caravan_index][-1]} on caravan {caravan_index}")
-                return True
-            else:
-                print("Invalid move. Please try again.")
-                return False
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-            return False
+                # Validate indices and card playability
+                if card_index < 0 or card_index >= len(player.hand) or caravan_index < 1 or caravan_index >= 4:
+                    print("Invalid move: Index out of range. Please try again.")
+                    return False
+
+                target_player = opponent if play_on_opponent else player
+                successful_move = player.play_card(card_index, caravan_index, target_player)
+
+                if successful_move:
+                    # Print the last move made
+                    print(f"Played {player.hand[card_index]} on {'opponent' if play_on_opponent else 'own'} caravan {caravan_index + 1}")
+                else:
+                    # Print why the move is invalid
+                    print("Invalid move: Cannot play the selected card in the chosen caravan. Please try again.")
+            except ValueError:
+                print("Invalid input: Please enter a valid number.")
+                successful_move = False
+
+        return successful_move
 
     def check_winner(self):
         for player in self.players:
@@ -183,17 +249,16 @@ class Game:
         return None
 
     def play(self):
-        self.start()
         while True:
-            valid_move = self.current_player_turn()
-            if valid_move:
-                winner = self.check_winner()
-                if winner:
-                    print(f"{winner} wins the game!")
-                    break
-                self.switch_player()
+            self.current_player_turn()
+            winner = self.check_winner()
+            if winner:
+                print(f"{winner} wins the game!")
+                break
+            self.switch_player()
 
 if __name__ == "__main__":
-    game = Game()
+    game = Game(ai_opponent=True)
     game.play()
+
 
