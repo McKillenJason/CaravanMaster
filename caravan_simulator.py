@@ -20,8 +20,8 @@ class Deck:
         if custom_cards:
             self.cards = custom_cards
         else:
-            # Standard deck creation
-            self.cards = [Card(value, suit) for value in range(1, 11) for suit in ["Hearts", "Diamonds", "Clubs", "Spades"]]
+            # Ensure face cards (Jacks, Queens, Kings) are included
+            self.cards = [Card(value, suit) for value in range(1, 14) for suit in ["Hearts", "Diamonds", "Clubs", "Spades"]]
         self.shuffle()
 
     def shuffle(self):
@@ -30,14 +30,18 @@ class Deck:
     def draw(self):
         return self.cards.pop() if self.cards else None
 
+    def print_deck(self):
+        for card in self.cards:
+            print(card)
+
+
 class Player:
     def __init__(self, name, deck):
         self.name = name
         self.deck = deck
         self.hand = []
         self.caravans = [[], [], []]
-        self.directions = [None, None, None]  # Direction for each caravan
-
+        self.directions = [None, None, None]
 
     def draw_card(self, deck):
         card = deck.draw()
@@ -48,21 +52,21 @@ class Player:
         while len(self.hand) < hand_size and self.deck.cards:
             self.draw_card(self.deck)
 
-    def play_card(self, card_index, caravan_index):
+    def play_card(self, card_index, caravan_index, opponent=None):
         if 0 <= card_index < len(self.hand) and 0 <= caravan_index < 3:
             card = self.hand[card_index]
-            caravan = self.caravans[caravan_index]
+            target_player = opponent if opponent else self
 
-            if self.can_play(card, caravan_index):
+            if target_player.can_play(card, caravan_index):
                 self.hand.pop(card_index)
-                caravan.append(card)
+                target_player.caravans[caravan_index].append(card)
                 if card.special:
-                    self.apply_special_effect(card, caravan_index)
+                    target_player.apply_special_effect(card, caravan_index)
                 return True
         return False
 
     def can_play(self, card, caravan_index):
-        caravan = self.caravans[caravan_index]  # Access the correct caravan using the index
+        caravan = self.caravans[caravan_index]
         direction = self.directions[caravan_index]
 
         if not caravan:
@@ -70,10 +74,9 @@ class Player:
 
         last_card = caravan[-1]
         if card.special:
-            return True  # Special cards can be played anytime
+            return True
 
         if len(caravan) == 1 and not card.special:
-            # Set direction based on the second card
             self.directions[caravan_index] = "up" if card.value > last_card.value else "down"
             return True
 
@@ -85,17 +88,31 @@ class Player:
 
         return True
 
-    def get_direction(self, caravan):
-        if len(caravan) < 2:
-            return None
-        first_card = caravan[0]
-        second_card = caravan[1]
-        return "up" if second_card.value > first_card.value else "down"
-
     def apply_special_effect(self, card, caravan_index):
         caravan = self.caravans[caravan_index]
-        # Special effects logic (to be implemented)
-        pass
+
+        if card.special_type == 'Jack':
+            # Remove the last card from the caravan (excluding the Jack itself)
+            for i in range(len(caravan) - 2, -2, -2):
+                if not caravan[i].special:
+                    removed_card = caravan.pop(i)
+                    print(f"Jack removed {removed_card} from caravan {caravan_index + 1}")
+                    break
+            
+          
+                
+
+        elif card.special_type == 'Queen':
+            # Reverse the direction of the caravan
+            current_direction = self.directions[caravan_index]
+            self.directions[caravan_index] = "down" if current_direction == "up" else "up"
+
+        elif card.special_type == 'King':
+            # Find the last non-special card to double
+            for i in range(len(caravan) - 1, -1, -1):
+                if not caravan[i].special:
+                    caravan.append(Card(caravan[i].value, caravan[i].suit))
+                    break
 
     def calculate_caravan_scores(self):
         scores = []
@@ -110,15 +127,18 @@ class Player:
 
 class Game:
     def __init__(self):
-        # Custom deck creation (for simplicity, using standard decks here)
-        deck1 = Deck(custom_cards=[Card(value, suit) for value in range(1, 11) for suit in ["Hearts", "Diamonds", "Clubs", "Spades"]] * 3)
-        deck2 = Deck(custom_cards=[Card(value, suit) for value in range(1, 11) for suit in ["Hearts", "Diamonds", "Clubs", "Spades"]] * 3)
+        # Ensure standard deck creation is used if custom deck is not provided
+        deck1 = Deck() 
+        deck2 = Deck()  
 
         self.players = [Player("Player 1", deck1), Player("Player 2", deck2)]
         self.current_player = 0
 
+        # Debug: Print deck composition
+        self.players[0].deck.print_deck()
+
+
     def start(self):
-        # Initial hand refill
         for player in self.players:
             player.refill_hand()
 
@@ -127,10 +147,11 @@ class Game:
 
     def current_player_turn(self):
         player = self.players[self.current_player]
+        opponent = self.players[1 - self.current_player]
+
         player.refill_hand()
         print(f"\n{player.name}'s turn. Hand: {player.show_hand()}")
 
-        # Display the status of each caravan
         for i, caravan in enumerate(player.caravans):
             caravan_value = sum(card.value for card in caravan if not card.special)
             direction = player.directions[i]
@@ -139,9 +160,12 @@ class Game:
         try:
             card_index = int(input("Choose a card to play (index): "))
             caravan_index = int(input("Choose a caravan to place the card (0-2): "))
+            play_on_opponent = input("Play on opponent's caravan? (yes/no): ").lower() == 'yes'
 
-            if player.play_card(card_index, caravan_index):
-                print(f"Played {player.caravans[caravan_index][-1]} on caravan {caravan_index}")
+            target_player = opponent if play_on_opponent else player
+
+            if player.play_card(card_index, caravan_index, target_player):
+                print(f"Played {target_player.caravans[caravan_index][-1]} on caravan {caravan_index}")
                 return True
             else:
                 print("Invalid move. Please try again.")
@@ -172,3 +196,4 @@ class Game:
 if __name__ == "__main__":
     game = Game()
     game.play()
+
